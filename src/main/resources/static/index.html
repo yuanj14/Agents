@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LangChain4j Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .message-user { background-color: #e0f2fe; align-self: flex-end; }
+        .message-ai { background-color: #f3f4f6; align-self: flex-start; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex">
+
+    <!-- Sidebar -->
+    <div class="w-64 bg-white border-r flex flex-col">
+        <div class="p-4 border-b">
+            <button onclick="createNewChat()" class="w-full bg-blue-600 text-white rounded-lg py-2 px-4 hover:bg-blue-700 transition">
+                + New Chat
+            </button>
+        </div>
+        <div id="memory-list" class="flex-1 overflow-y-auto p-2 space-y-2">
+            <!-- memories will be listed here -->
+        </div>
+    </div>
+
+    <!-- Main Chat Area -->
+    <div class="flex-1 flex flex-col">
+        <!-- Header -->
+        <header class="bg-white shadow p-4">
+            <h1 class="text-xl font-semibold text-gray-800">LangChain4j Assistant</h1>
+            <p id="current-memory-id" class="text-xs text-gray-500 font-mono"></p>
+        </header>
+
+        <!-- Messages -->
+        <div id="chat-container" class="flex-1 overflow-y-auto p-4 flex flex-col space-y-4">
+            <!-- Messages will be injected here -->
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 bg-white border-t">
+            <form id="chat-form" class="flex space-x-2">
+                <input type="text" id="user-input"
+                       class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                       placeholder="Type your message..." autocomplete="off">
+                <button type="submit" id="send-btn"
+                        class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-300">
+                    Send
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080';
+        let currentMemoryId = '11';
+        const memoriesKey = 'chat_memories';
+
+        function init() {
+            let memories = getMemories();
+            if (!memories.includes('11')) {
+                memories.unshift('11');
+                localStorage.setItem(memoriesKey, JSON.stringify(memories));
+            }
+            switchMemory('11');
+            renderMemoryList();
+        }
+
+        function getMemories() {
+            const data = localStorage.getItem(memoriesKey);
+            return data ? JSON.parse(data) : [];
+        }
+
+        function createNewChat() {
+            const id = prompt("Enter Memory ID:", "11") || "11";
+            const memories = getMemories();
+            if (!memories.includes(id)) {
+                memories.unshift(id);
+                localStorage.setItem(memoriesKey, JSON.stringify(memories));
+            }
+            switchMemory(id);
+            renderMemoryList();
+        }
+
+        function switchMemory(id) {
+            currentMemoryId = id;
+            document.getElementById('current-memory-id').innerText = `Memory: ${id}`;
+            document.getElementById('chat-container').innerHTML = '';
+            loadHistory(id);
+            renderMemoryList();
+        }
+
+        function renderMemoryList() {
+            const list = document.getElementById('memory-list');
+            list.innerHTML = '';
+            getMemories().forEach(id => {
+                const div = document.createElement('div');
+                div.className = `p-3 rounded-lg cursor-pointer transition ${id === currentMemoryId ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100 text-gray-600'}`;
+                div.innerText = id;
+                div.onclick = () => switchMemory(id);
+                list.appendChild(div);
+            });
+        }
+
+        async function loadHistory(memoryId) {
+            try {
+                const response = await fetch(`${API_BASE}/chat/history/${memoryId}`);
+                if (!response.ok) return;
+                const messages = await response.json();
+                messages.forEach(msg => {
+                    // ChatMessage structure usually has type/text or role/content depending on serialization
+                    // LangChain4j ChatMessageSerializer uses distinct types
+                    let role = 'ai';
+                    let text = '';
+
+                    if (msg.type === 'USER') {
+                        role = 'user';
+                        text = msg.text;
+                    } else if (msg.type === 'AI') {
+                        role = 'ai';
+                        text = msg.text;
+                    } else if (msg.type === 'SYSTEM') {
+                        return; // skip system messages in UI
+                    }
+
+                    if (text) appendMessage(role, text);
+                });
+            } catch (error) {
+                console.error('Failed to load history:', error);
+            }
+        }
+
+        function appendMessage(role, text) {
+            const container = document.getElementById('chat-container');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `max-w-[80%] p-3 rounded-xl shadow-sm ${role === 'user' ? 'message-user' : 'message-ai'}`;
+            msgDiv.innerText = text;
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+            return msgDiv;
+        }
+
+        document.getElementById('chat-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('user-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            input.value = '';
+            appendMessage('user', message);
+
+            const aiMsgDiv = appendMessage('ai', '...');
+            aiMsgDiv.innerText = ''; // Clear the dots
+
+            const sendBtn = document.getElementById('send-btn');
+            sendBtn.disabled = true;
+
+            try {
+                const url = `${API_BASE}/chat?message=${encodeURIComponent(message)}&memoryId=${currentMemoryId}`;
+                console.log('Fetching:', url);
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    aiMsgDiv.innerText = `Error ${response.status}: ${errorText.substring(0, 100)}`;
+                    sendBtn.disabled = false;
+                    return;
+                }
+
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('text/html')) {
+                    aiMsgDiv.innerText = 'Error: Received HTML instead of stream. Check backend path.';
+                    sendBtn.disabled = false;
+                    return;
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value, { stream: true });
+                    aiMsgDiv.innerText += chunk;
+                    document.getElementById('chat-container').scrollTop = document.getElementById('chat-container').scrollHeight;
+                }
+            } catch (error) {
+                aiMsgDiv.innerText = 'Error: ' + error.message;
+            } finally {
+                sendBtn.disabled = false;
+            }
+        };
+
+        init();
+    </script>
+</body>
+</html>
+

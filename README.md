@@ -5,7 +5,7 @@
 <h1 align="center">LangChain4j SpringBoot Starter</h1>
 
 <p align="center">
-  基于 Spring Boot 3 & LangChain4j 1.0 的企业级 AI 应用脚手架，集成了流式对话、RAG 知识库、持久化记忆与函数调用。
+  基于LangChain4j的 AI 应用脚手架，集成了流式对话、RAG 知识库、持久化记忆与函数调用。
 </p>
 
 <p align="center">

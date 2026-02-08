@@ -1,0 +1,20 @@
+version: '3.8'
+name: langchain4j
+
+services:
+  redis:
+    container_name: redis-search
+    image: redis/redis-stack:latest
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    volumes:
+      - ./data:/data
+    environment:
+      - REDIS_ARGS=--appendonly yes
+    networks:
+      - langchain4j-network
+
+networks:
+  langchain4j-network:
+    driver: bridge
